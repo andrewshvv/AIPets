@@ -9,6 +9,10 @@
         <PackageId>AIPets</PackageId>
     </PropertyGroup>
 
+    <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+      <OutputPath>/Volumes/[C] Windows 11.hidden/Program Files (x86)/Steam/steamapps/common/Valheim/BepInEx/plugins/</OutputPath>
+    </PropertyGroup>
+
     <ItemGroup>
         <Protobuf Include="grpc\protos\greet.proto" GrpcServices="Server">
             <Link>protos\greet.proto</Link>
