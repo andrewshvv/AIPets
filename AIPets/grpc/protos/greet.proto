@@ -1,21 +1,38 @@
 syntax = "proto3";
 
-option csharp_namespace = "GrpcService";
+option csharp_namespace = "AIPets.grpc";
 
-package greet;
+package environment;
 
-// The greeting service definition.
-service Greeter {
-  // Sends a greeting
-  rpc SayHello (HelloRequest) returns (HelloReply);
+service Environment {
+  rpc Step (StepRequest) returns (StepResponse);
+  rpc Reset (ResetRequest) returns (State);
 }
 
-// The request message containing the user's name.
-message HelloRequest {
-  string name = 1;
+message ResetRequest {}
+
+// Valheim specific
+message Vector3 {
+  float x = 1;
+  float y = 2;
+  float z = 3;
 }
 
-// The response message containing the greetings.
-message HelloReply {
-  string message = 1;
+// Valheim specific
+message StepRequest {
+  Vector3 wolf_direction = 1;
+}
+
+// Valheim specific
+message State {
+  Vector3 player_direction = 1;
+  Vector3 player_position = 2;
+  Vector3 wolf_direction = 3;
+  Vector3 wolf_position = 4;
+}
+
+message StepResponse {
+  int32 reward = 1;
+  bool done = 2;
+  State state = 3;
 }

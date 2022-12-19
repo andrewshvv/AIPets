@@ -1,7 +1,7 @@
 ﻿using System;
+using AIPets.grpc;
 using BepInEx;
 using Grpc.Core;
-using GrpcService;
 using HarmonyLib;
 using UnityEngine;
 
@@ -12,29 +12,30 @@ public class Plugin : BaseUnityPlugin
 {
     private static Server _server;
     private static Player _player;
-    private static readonly Harmony _harmony = new Harmony("andrewshvv.ValheimMod");
+    private static readonly Harmony Harmony = new Harmony("andrewshvv.AIPets");
 
     private void Awake()
     {
         _server = new Server
         {
-            Services = { Greeter.BindService(new GreeterService()) },
+            Services = { grpc.Environment.BindService(new EnvironmentService()) },
             Ports = { new ServerPort("0.0.0.0", 50051, ServerCredentials.Insecure) }
         };
 
         _server.Start();
         Logger.LogInfo($"gRPC server listening on port 50051");
 
-        _harmony.PatchAll();
+        Harmony.PatchAll();
     }
 
     private void OnDestroy()
     {
         _server.ShutdownAsync().Wait();
+        Harmony.UnpatchAll();
     }
 
     [HarmonyPatch]
-    class Environment
+    private class ValheimEnvironment
     {
         private static Console _console;
         private static DateTime _initTime;
@@ -51,7 +52,7 @@ public class Plugin : BaseUnityPlugin
 
             _console = __instance;
             _initTime = DateTime.UtcNow.AddSeconds(-InitDelay);
-            Debug.Log($"Console initialised {__instance is not null}");
+            Debug.Log($"Console initialised {_console is not null}");
         }
 
         public static void InitEnvironment()
@@ -86,33 +87,29 @@ public class Plugin : BaseUnityPlugin
     }
 
     // Patch awake to initialise the game instance
-    [HarmonyPatch]
-    private class Initialiser
-    {
-        [HarmonyPatch(typeof(Game), "Awake")]
-        static void Postfix(Game __instance)
-        {
-            if (__instance == null)
-            {
-                return;
-            }
-
-            Debug.Log($"Game initialised {__instance != null}");
-            // game = __instance;
-        }
-
-        // Patch destroy to delete the game instance
-        [HarmonyPatch(typeof(Game), "OnDestroy")]
-        static void Postfix()
-        {
-            Debug.Log("Game destroyed");
-            // game = null;
-        }
-    }
+    // [HarmonyPatch]
+    // private class Initialiser
+    // {
+    //     [HarmonyPatch(typeof(Game), "Awake")]
+    //     static void Postfix(Game __instance)
+    //     {
+    //         if (__instance == null) return;
+    //         Debug.Log($"Game initialised {__instance != null}");
+    //         // game = __instance;
+    //     }
+    //
+    //     // Patch destroy to delete the game instance
+    //     [HarmonyPatch(typeof(Game), "OnDestroy")]
+    //     static void Postfix()
+    //     {
+    //         Debug.Log("Game destroyed");
+    //         // game = null;
+    //     }
+    // }
 
 
     [HarmonyPatch]
-    class CustomKeyboard
+    private class CustomKeyboard
     {
         [HarmonyPatch(typeof(ZInput), nameof(ZInput.Update))]
         [HarmonyPostfix]
@@ -120,7 +117,7 @@ public class Plugin : BaseUnityPlugin
         {
             if (ZInput.GetButton("InitEnvironment"))
             {
-                Environment.InitEnvironment();
+                ValheimEnvironment.InitEnvironment();
             }
         }
 
@@ -193,11 +190,11 @@ public class Plugin : BaseUnityPlugin
             Debug.Log("Get info pressed");
             // System.Threading.Thread.Sleep(50);
 
-            Vector3 playerPosition = _player.transform.position;
-            Vector3 playerMoveDir = _player.GetComponent<Character>().GetMoveDir();
+            UnityEngine.Vector3 playerPosition = _player.transform.position;
+            UnityEngine.Vector3 playerMoveDir = _player.GetComponent<Character>().GetMoveDir();
 
-            Vector3 wolfPosition = _wolf.transform.position;
-            Vector3 wolfMoveDir = _wolf.GetComponent<Character>().GetMoveDir();
+            UnityEngine.Vector3 wolfPosition = _wolf.transform.position;
+            UnityEngine.Vector3 wolfMoveDir = _wolf.GetComponent<Character>().GetMoveDir();
 
             Debug.Log($"Player position {playerPosition}");
             Debug.Log($"Player move dir {playerMoveDir}");
