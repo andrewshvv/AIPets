@@ -1,36 +1,19 @@
 using System;
-using System.Diagnostics;
-using System.Threading;
 using Chan4Net;
-using UnityEngine;
+using Vector3 = UnityEngine.Vector3;
 
 
 namespace AIPets;
 
-public struct GameState
-{
-    public grpc.Vector3 PlayerPosition;
-    public grpc.Vector3 PlayerMoveDir;
-    public grpc.Vector3 WolfPosition;
-    public grpc.Vector3 WolfMoveDir;
-}
-
-public struct EnvState
-{
-    public bool Done;
-    public int Reward;
-    public GameState State;
-}
-
 public class EnvStream
 {
     private bool _working;
-
     private bool _needReset;
+    private bool _needWaitAction;
     private readonly object _lock = new();
-    private Chan<EnvState> _stateChan;
+    private Chan<grpc.Feedback> _feedbackChan;
     private readonly Chan<bool> _startedChan = new(size: 1);
-    // private Chan<bool> _stepChan;
+    private Chan<grpc.Action> _actionChan;
 
     public void Start()
     {
@@ -38,7 +21,8 @@ public class EnvStream
         {
             if (_working) return;
             _working = true;
-            _stateChan = new Chan<EnvState>(1);
+            _feedbackChan = new Chan<grpc.Feedback>(1);
+            _actionChan = new Chan<grpc.Action>(1);
         }
     }
 
@@ -49,17 +33,18 @@ public class EnvStream
             if (!_working) return;
             _working = false;
         }
-        
-        _stateChan.Close();
+
+        _feedbackChan.Close();
+        _actionChan.Close();
     }
 
-    public bool SendState(EnvState state)
+    public bool SendState(grpc.Feedback feedback)
     {
         if (!IsWorking()) return false;
 
         try
         {
-            _stateChan.Send(state);
+            _feedbackChan.Send(feedback);
             return true;
         }
         catch (InvalidOperationException)
@@ -68,13 +53,52 @@ public class EnvStream
         }
     }
 
-    public EnvState? WaitNextState()
+    public bool SendAction(grpc.Action action)
+    {
+        try
+        {
+            _actionChan.Send(action);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    public bool NeedWaitAction()
+    {
+        // Allow game to work for X frames
+        // before returning the state
+        if (_needWaitAction)
+        {
+            _needWaitAction = false;
+            return true;
+        } 
+        
+        _needWaitAction = true;
+        return false;
+    }
+    
+    public grpc.Action? WaitAction()
+    {
+        try
+        {
+            return _actionChan.Receive();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    public grpc.Feedback? WaitFeedback()
     {
         if (!IsWorking()) return null;
 
         try
         {
-            return _stateChan.Receive();
+            return _feedbackChan.Receive();
         }
         catch (InvalidOperationException)
         {
@@ -109,8 +133,9 @@ public class EnvStream
     public bool Reset()
     {
         Stop();
-        
-        try {
+
+        try
+        {
             lock (_lock)
             {
                 if (_needReset) return true;
@@ -125,13 +150,23 @@ public class EnvStream
         }
     }
 
-    public static grpc.Vector3 ConvertVec3(Vector3 vec3)
+    public static grpc.Vector3 ConvertUnitVec3(Vector3 vec3)
     {
         return new grpc.Vector3
         {
             X = vec3.x,
             Y = vec3.y,
             Z = vec3.z,
+        };
+    }
+
+    public static Vector3 ConvertGrpcVec3(grpc.Vector3 vec3)
+    {
+        return new Vector3
+        {
+            x = vec3.X,
+            y = vec3.Y,
+            z = vec3.Z,
         };
     }
 }

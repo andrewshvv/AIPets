@@ -31,26 +31,28 @@ namespace AIPets.grpc
             _logger = logger;
         }
 
-        public override Task<StepResponse> Step(StepRequest request, ServerCallContext context)
+        public override Task<Feedback> Step(Action action, ServerCallContext context)
         {
             _logger.LogInfo("GRPC: Step");
-            EnvState? state = _stream.WaitNextState();
-            if (state is null)
+            if (!_stream.SendAction(action)) return null;
+            
+            Feedback? feedback = _stream.WaitFeedback();
+            if (feedback is null)
             {
-                _logger.LogInfo("GRPC: Step skipped");
+                _logger.LogInfo("GRPC: Feedback skipped");
                 return null;
             }
             
-            return Task.FromResult(new StepResponse
+            return Task.FromResult(new Feedback
             {
-                Done = (bool)state?.Done,
-                Reward = (int)state?.Reward,
+                Done = (bool)feedback?.Done,
+                Reward = (int)feedback?.Reward,
                 State = new State
                 {
-                    PlayerDirection = state?.State.PlayerMoveDir,
-                    PlayerPosition = state?.State.PlayerPosition,
-                    WolfDirection = state?.State.WolfMoveDir,
-                    WolfPosition = state?.State.WolfPosition
+                    PlayerDirection = feedback?.State.PlayerDirection,
+                    PlayerPosition = feedback?.State.PlayerPosition,
+                    WolfDirection = feedback?.State.WolfDirection,
+                    WolfPosition = feedback?.State.WolfPosition
                 }
             });
         }
@@ -64,8 +66,8 @@ namespace AIPets.grpc
                 return null;
             }
             
-            EnvState? state = _stream.WaitNextState();
-            if (state is null)
+            Feedback? feedback = _stream.WaitFeedback();
+            if (feedback is null)
             {
                 _logger.LogInfo("GRPC: Reset skipped, state null");
                 return null;
@@ -73,10 +75,10 @@ namespace AIPets.grpc
             
             return Task.FromResult(new State
             {
-                PlayerDirection = state?.State.PlayerMoveDir,
-                PlayerPosition = state?.State.PlayerPosition,
-                WolfDirection = state?.State.WolfMoveDir,
-                WolfPosition = state?.State.WolfPosition
+                PlayerDirection = feedback?.State.PlayerDirection,
+                PlayerPosition = feedback?.State.PlayerPosition,
+                WolfDirection = feedback?.State.WolfDirection,
+                WolfPosition = feedback?.State.WolfPosition
             });
         }
         
