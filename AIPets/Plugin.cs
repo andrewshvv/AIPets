@@ -7,6 +7,7 @@ using Grpc.Core;
 using HarmonyLib;
 using UnityEngine;
 using Feedback = AIPets.grpc.Feedback;
+using Vector2 = UnityEngine.Vector2;
 using Vector3 = UnityEngine.Vector3;
 
 namespace AIPets;
@@ -213,10 +214,20 @@ public class Plugin : BaseUnityPlugin
             return;
         }
 
+        [HarmonyReversePatch]
+        [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.StopMoving))]
+        public static void UnpatchedStopMoving(object instance)
+        {
+            // This method is just a stub, the actual code which is executed
+            // when this method called is original patched method.
+            return;
+        }
+
 
         [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.MoveTowards))]
+        [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.StopMoving))]
         [HarmonyPrefix]
-        private static bool RemoveValheimControlOverWolf(BaseAI __instance, ref Vector3 dir, ref bool run)
+        private static bool RemoveValheimControlOverMoveDir(BaseAI __instance)
         {
             if (__instance is null) return true;
             if (_wolf is null) return true;
@@ -249,7 +260,6 @@ public class Plugin : BaseUnityPlugin
             _timer = 0f;
             _realTimer = DateTime.UtcNow;
 
-
             // Wait for env reset, which will start the stream
             if (!_stream.IsWorking()) return true;
 
@@ -262,16 +272,21 @@ public class Plugin : BaseUnityPlugin
                 grpc.Action action = _stream.WaitAction();
                 if (action is null) return true;
 
-                Vector3 direction = EnvStream.ConvertGrpcVec3(action.WolfDirection);
-                if (direction.magnitude != 0)
+                Vector2 direction2d = EnvStream.ConvertGrpcVec2(action.WolfDirection);
+                Vector3 direction3d = Vector3.zero;
+                direction3d.x = direction2d.x;
+                direction3d.z = direction2d.y; // weird valheim coordinates
+                direction3d.y = 0;
+                
+                if (direction3d.magnitude != 0)
                 {
                     _logger.LogInfo("calling original method");
-                    UnpachedMoveTowards(_wolf, direction, true);
+                    UnpachedMoveTowards(_wolf, direction3d, false);
 
                     return true;
                 }
 
-                _wolf.StopMoving();
+                UnpatchedStopMoving(_wolf);
                 return true;
             }
 
@@ -280,7 +295,7 @@ public class Plugin : BaseUnityPlugin
             // we have to send state after applied action.
             grpc.Feedback feedback = new();
             feedback.State = new();
-            
+
             feedback.Done = false;
             feedback.Reward = 0;
             feedback.State.PlayerPosition = EnvStream.ConvertUnitVec3(_player.transform.position);
@@ -288,12 +303,7 @@ public class Plugin : BaseUnityPlugin
             feedback.State.WolfPosition = EnvStream.ConvertUnitVec3(_wolf.transform.position);
             feedback.State.WolfDirection = EnvStream.ConvertUnitVec3(_wolf.GetComponent<Character>().GetMoveDir());
             if (!_stream.SendState(feedback)) return true;
-
-            // todo: receive an action from grpc, how?
-            // - wait for grpc request start
-            // - wait for action
-            // - apply action and return to wait for frames
-            // - return the state after
+            
             // todo: calculate the reward
             // - distance between me a wolf, if within R than reward 1
             // todo: calculate done
@@ -346,6 +356,7 @@ public class Plugin : BaseUnityPlugin
         }
 
         [HarmonyPatch(typeof(BaseAI), "OnDeath")]
+        [HarmonyPatch(typeof(BaseAI), "OnDestroy")]
         [HarmonyPrefix]
         static bool OnWolfsDeath(BaseAI __instance)
         {
@@ -386,6 +397,20 @@ public class Plugin : BaseUnityPlugin
 
             _wolf = __instance;
             _logger.LogInfo($"WolfInitToggle: Wolf following, and initialised {_wolf is not null}");
+        }
+
+        static void MoveWithKeyboard()
+        {
+            Vector3 direction = WolfKeyboardMoveDir();
+            if (direction.magnitude != 0)
+            {
+                _logger.LogInfo("calling original method");
+                UnpachedMoveTowards(_wolf, direction, false);
+            }
+            else
+            {
+                UnpatchedStopMoving(_wolf);
+            }
         }
     }
 }

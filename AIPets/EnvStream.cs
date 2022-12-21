@@ -1,5 +1,6 @@
 using System;
 using Chan4Net;
+using UnityEngine;
 using Vector3 = UnityEngine.Vector3;
 
 
@@ -32,8 +33,9 @@ public class EnvStream
         {
             if (!_working) return;
             _working = false;
+            _needWaitAction = false;
         }
-
+        
         _feedbackChan.Close();
         _actionChan.Close();
     }
@@ -167,6 +169,24 @@ public class EnvStream
             x = vec3.X,
             y = vec3.Y,
             z = vec3.Z,
+        };
+    }
+    
+    public static grpc.Vector2 ConvertUnitVec2(Vector2 vec3)
+    {
+        return new grpc.Vector2
+        {
+            X = vec3.x,
+            Y = vec3.y,
+        };
+    }
+
+    public static Vector2 ConvertGrpcVec2(grpc.Vector2 vec3)
+    {
+        return new Vector2
+        {
+            x = vec3.X,
+            y = vec3.Y,
         };
     }
 }
