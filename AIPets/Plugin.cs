@@ -187,6 +187,7 @@ public class Plugin : BaseUnityPlugin
         private static MonsterAI _wolf;
         private static float _timer = 0.0f;
         private const float _step = 0.2f;
+        private static Vector3 _wolfDir;
 
         private static DateTime _realTimer = DateTime.UtcNow;
 
@@ -196,13 +197,47 @@ public class Plugin : BaseUnityPlugin
         static void InitPlayer(Player __instance)
         {
             // TODO: What if there are two players?
-            if (__instance == null)
-            {
-                return;
-            }
+            if (__instance == null) return;
 
             _logger.LogInfo($"Player initialised {__instance != null}");
             _player = __instance;
+        }
+
+        [HarmonyReversePatch]
+        [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.MoveTowards))]
+        public static void UnpachedMoveTowards(object instance, Vector3 dir, bool run)
+        {
+            // This method is just a stub, the actual code which is executed
+            // when this method called is original patched method.
+            return;
+        }
+        
+        
+        [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.MoveTowards))]
+        [HarmonyPrefix]
+        private static bool RemoveValheimControlOverWolf(BaseAI __instance, ref Vector3 dir, ref bool run)
+        {
+            if (__instance is null) return true;
+            if (_wolf is null) return true;
+
+            bool isOurWolf = ReferenceEquals(__instance.gameObject, _wolf.gameObject);
+            if (!isOurWolf) return true;
+            
+            // if (dir.magnitude == 0) return true;
+            //
+            // _logger.LogInfo($"Dir {dir}");
+            // _logger.LogInfo($"Our {_wolfDir}");
+            //
+            // if (dir.Equals(_wolfDir))
+            // {
+            //     _logger.LogInfo($"Directed {dir}");
+            //     _wolfDir = Vector3.zero;
+            //     return true;
+            // } 
+
+            // If it is a wolf and is it directed not by patch than stop it
+            return false;
+
         }
 
         [HarmonyPatch(typeof(MonsterAI), "UpdateAI")]
@@ -218,24 +253,39 @@ public class Plugin : BaseUnityPlugin
             _timer += Time.deltaTime;
             if (_timer < _step) return true;
 
-            _logger.LogInfo("==========");
-            _logger.LogInfo($"Delta {Time.deltaTime}");
-            _logger.LogInfo($"Unity time passed {_timer}");
-            _logger.LogInfo($"Real time passed {DateTime.UtcNow.Subtract(_realTimer).TotalSeconds}");
+            _logger.LogDebug("==========");
+            _logger.LogDebug($"Delta {Time.deltaTime}");
+            _logger.LogDebug($"Unity time passed {_timer}");
+            _logger.LogDebug($"Real time passed {DateTime.UtcNow.Subtract(_realTimer).TotalSeconds}");
 
             _timer = 0f;
             _realTimer = DateTime.UtcNow;
 
+            // TODO: Substitute with action from model
+            var direction = WolfKeyboardMoveDir();
+            if (direction.magnitude != 0)
+            {
+                _logger.LogInfo("Calling original method");
+                UnpachedMoveTowards(_wolf, direction, false);
+            } else
+            {
+                _wolf.StopMoving();
+            }
+
+
             // Wait for gRPC request
             if (!_stream.IsWorking()) return true;
-
-
-            // bool showInfo = ZInput.GetButton("GetInfo");
-            // if (!showInfo) return true;
-
-            _logger.LogInfo("Get info pressed");
-            // System.Threading.Thread.Sleep(50);
-
+            
+            // todo: replace the movement of wolf with ours properly
+            // todo: receive an action from grpc, how?
+            // - wait for grpc request start
+            // - wait for action
+            // - apply action and return to wait for frames
+            // - return the state after
+            // todo: calculate the reward
+            // - distance between me a wolf, if within R than reward 1
+            // todo: calculate done
+            // - is wolf null check
 
             EnvState envState = default;
             envState.Done = false;
@@ -245,20 +295,49 @@ public class Plugin : BaseUnityPlugin
             envState.State.WolfPosition = EnvStream.ConvertVec3(_wolf.transform.position);
             envState.State.WolfMoveDir = EnvStream.ConvertVec3(_wolf.GetComponent<Character>().GetMoveDir());
             _stream.SendState(envState);
-
-            // _logger.LogInfo($"Player position {_stream.playerPosition}");
-            // _logger.LogInfo($"Player move dir {_stream.playerMoveDir}");
-            // _logger.LogInfo($"Wolf position {_stream.wolfPosition}");
-            // _logger.LogInfo($"Wolf move dir {_stream.wolfMoveDir}");
-
-            // print player position
-            // print wolf position
-            // current wolf direction
-            // current player direction 
+             
 
             return true;
         }
 
+        public static Vector3 WolfKeyboardMoveDir()
+        {
+            Vector3 direction = Vector3.zero;
+            if (ZInput.GetButton("WolfForward"))
+            {
+                _logger.LogInfo("Forward");
+                direction.z += 1f;
+            }
+            if (ZInput.GetButton("WolfBackward"))
+            {
+                _logger.LogInfo("Backward");
+                direction.z -= 1f;
+            }
+            if (ZInput.GetButton("WolfLeft"))
+            {
+                _logger.LogInfo("Left");
+                direction.x -= 1f;
+            }
+            if (ZInput.GetButton("WolfRight"))
+            {
+                _logger.LogInfo("Right");
+                direction.x += 1f;
+            }
+            if (ZInput.GetButton("WolfStop"))
+            {
+                _logger.LogInfo("Stop");
+                direction.x = 0;
+                direction.z = 0;
+            }
+            if (ZInput.GetButton("WolfRun"))
+            {
+                _logger.LogInfo("Run");
+            }
+
+            direction.Normalize();
+            return direction;
+        }
+        
         [HarmonyPatch(typeof(BaseAI), "OnDeath")]
         [HarmonyPrefix]
         static bool OnWolfsDeath(BaseAI __instance)
@@ -274,27 +353,6 @@ public class Plugin : BaseUnityPlugin
 
             return true;
         }
-
-        // [HarmonyPatch(typeof(MonsterAI), "Awake")]
-        // [HarmonyPostfix]
-        // static void WolfCreation(MonsterAI __instance, Character ___m_character)
-        // {
-        //     _logger.LogInfo("Wolf creation enter target");
-        //     
-        //     if (__instance is null) return;
-        //     if (_player?.gameObject is null) return;
-        //     if (___m_character is null) return;
-        //     
-        //     var isWolf = ___m_character.m_name == "$enemy_wolf";
-        //     if (!isWolf) return;
-        //
-        //     var isTamed = ___m_character.IsTamed();
-        //     if (!isTamed) return;
-        //     
-        //     _player.
-        //     __instance.SetFollowTarget(_player.gameObject);
-        //     _logger.LogInfo("Wolf set follow target");
-        // }
 
         [HarmonyPatch(typeof(MonsterAI), nameof(MonsterAI.SetFollowTarget))]
         [HarmonyPostfix]
@@ -323,12 +381,4 @@ public class Plugin : BaseUnityPlugin
             _logger.LogInfo($"WolfInitToggle: Wolf following, and initialised {_wolf is not null}");
         }
     }
-
-    /*[HarmonyReversePatch]
-    [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.MoveTowards))]
-    static void OriginalMoveTowards(Vector3 dir, bool run)
-    {
-        // its a stub so it has no initial content
-        throw new System.NotImplementedException("It's a stub");
-    }*/
 }
