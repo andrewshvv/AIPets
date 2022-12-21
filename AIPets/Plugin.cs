@@ -1,9 +1,12 @@
 ﻿using System;
+using System.Collections.Generic;
 using AIPets.grpc;
 using BepInEx;
+using BepInEx.Logging;
 using Grpc.Core;
 using HarmonyLib;
 using UnityEngine;
+using Vector3 = UnityEngine.Vector3;
 
 namespace AIPets;
 
@@ -12,25 +15,41 @@ public class Plugin : BaseUnityPlugin
 {
     private static Server _server;
     private static Player _player;
+    private static EnvStream _stream;
+    private static ManualLogSource _logger;
     private static readonly Harmony Harmony = new Harmony("andrewshvv.AIPets");
 
     private void Awake()
     {
+        _logger = Logger;
+        _stream = new EnvStream();
         _server = new Server
         {
-            Services = { grpc.Environment.BindService(new EnvironmentService()) },
+            Services = { grpc.Environment.BindService(new EnvironmentService(_stream, _logger)) },
             Ports = { new ServerPort("0.0.0.0", 50051, ServerCredentials.Insecure) }
         };
-
-        _server.Start();
-        Logger.LogInfo($"gRPC server listening on port 50051");
 
         Harmony.PatchAll();
     }
 
+
+    [HarmonyPatch]
+    private class Init
+    {
+        [HarmonyPatch(typeof(Minimap), "LoadMapData")]
+        [HarmonyPostfix]
+        static void InitGrpc()
+        {
+            _server.Start();
+            _logger.LogInfo($"gRPC server listening on port 50051");
+        }
+    }
+
     private void OnDestroy()
     {
+        _stream.Stop();
         _server.ShutdownAsync().Wait();
+        _logger.LogInfo($"gRPC stopped");
         Harmony.UnpatchAll();
     }
 
@@ -52,17 +71,21 @@ public class Plugin : BaseUnityPlugin
 
             _console = __instance;
             _initTime = DateTime.UtcNow.AddSeconds(-InitDelay);
-            Debug.Log($"Console initialised {_console is not null}");
+            _logger.LogInfo($"Console initialised {_console is not null}");
         }
 
-        public static void InitEnvironment()
+        public static void InitEnvironment(bool force = false)
         {
-            var dt = (int)DateTime.UtcNow.Subtract(_initTime).TotalSeconds;
-            if (dt < InitDelay)
+            if (!force)
             {
-                Debug.Log($"Environment: Wait {InitDelay - dt} seconds to init environment");
-                return;
+                var dt = (int)DateTime.UtcNow.Subtract(_initTime).TotalSeconds;
+                if (dt < InitDelay)
+                {
+                    _logger.LogInfo($"Environment: Wait {InitDelay - dt} seconds to init environment");
+                    return;
+                }
             }
+
 
             if (!_debugMode)
             {
@@ -78,10 +101,21 @@ public class Plugin : BaseUnityPlugin
             _console.TryRunCommand("removedrops");
             _console.TryRunCommand("spawn Wolf");
             _console.TryRunCommand("tame");
+                
+            List<Character> allCharacters = Character.GetAllCharacters();
+            foreach (Character character in allCharacters)
+            {
+                if (character.IsDead()) continue;
+                if (character.m_name != "$enemy_wolf") continue;
+                if (!character.IsTamed()) continue;
 
+                ((MonsterAI)character.GetBaseAI()).SetFollowTarget(_player.gameObject);
+                _logger.LogInfo($"{character.m_name} set followed");
+            }
+            
             // go to some distance from wolf or move the wolf?
-
-            Debug.Log("Environment initialised");
+            
+            _logger.LogInfo("Environment initialised");
             _initTime = DateTime.UtcNow;
         }
     }
@@ -94,7 +128,7 @@ public class Plugin : BaseUnityPlugin
     //     static void Postfix(Game __instance)
     //     {
     //         if (__instance == null) return;
-    //         Debug.Log($"Game initialised {__instance != null}");
+    //         _logger.LogInfo($"Game initialised {__instance != null}");
     //         // game = __instance;
     //     }
     //
@@ -102,7 +136,7 @@ public class Plugin : BaseUnityPlugin
     //     [HarmonyPatch(typeof(Game), "OnDestroy")]
     //     static void Postfix()
     //     {
-    //         Debug.Log("Game destroyed");
+    //         _logger.LogInfo("Game destroyed");
     //         // game = null;
     //     }
     // }
@@ -115,6 +149,14 @@ public class Plugin : BaseUnityPlugin
         [HarmonyPostfix]
         static void InitGlobalKeyBoardListener(ZInput __instance)
         {
+            if (_stream.NeedReset())
+            {
+                ValheimEnvironment.InitEnvironment(true);
+                _stream.Start();
+                _stream.IsReseted();
+                return;
+            }
+            
             if (ZInput.GetButton("InitEnvironment"))
             {
                 ValheimEnvironment.InitEnvironment();
@@ -135,7 +177,7 @@ public class Plugin : BaseUnityPlugin
             __instance.AddButton("WolfRun", KeyCode.T);
             __instance.AddButton("GetInfo", KeyCode.O);
             __instance.AddButton("InitEnvironment", KeyCode.L, repeatDelay, repeatInterval);
-            Debug.Log($"Buttons initialised {__instance is not null}");
+            _logger.LogInfo($"Buttons initialised {__instance is not null}");
         }
     }
 
@@ -159,7 +201,7 @@ public class Plugin : BaseUnityPlugin
                 return;
             }
 
-            Debug.Log($"Player initialised {__instance != null}");
+            _logger.LogInfo($"Player initialised {__instance != null}");
             _player = __instance;
         }
 
@@ -176,30 +218,38 @@ public class Plugin : BaseUnityPlugin
             _timer += Time.deltaTime;
             if (_timer < _step) return true;
 
-            Debug.Log("==========");
-            Debug.Log($"Delta {Time.deltaTime}");
-            Debug.Log($"Unity time passed {_timer}");
-            Debug.Log($"Real time passed {DateTime.UtcNow.Subtract(_realTimer).TotalSeconds}");
+            _logger.LogInfo("==========");
+            _logger.LogInfo($"Delta {Time.deltaTime}");
+            _logger.LogInfo($"Unity time passed {_timer}");
+            _logger.LogInfo($"Real time passed {DateTime.UtcNow.Subtract(_realTimer).TotalSeconds}");
 
             _timer = 0f;
             _realTimer = DateTime.UtcNow;
 
-            bool showInfo = ZInput.GetButton("GetInfo");
-            if (!showInfo) return true;
+            // Wait for gRPC request
+            if (!_stream.IsWorking()) return true;
 
-            Debug.Log("Get info pressed");
+
+            // bool showInfo = ZInput.GetButton("GetInfo");
+            // if (!showInfo) return true;
+
+            _logger.LogInfo("Get info pressed");
             // System.Threading.Thread.Sleep(50);
 
-            UnityEngine.Vector3 playerPosition = _player.transform.position;
-            UnityEngine.Vector3 playerMoveDir = _player.GetComponent<Character>().GetMoveDir();
 
-            UnityEngine.Vector3 wolfPosition = _wolf.transform.position;
-            UnityEngine.Vector3 wolfMoveDir = _wolf.GetComponent<Character>().GetMoveDir();
+            EnvState envState = default;
+            envState.Done = false;
+            envState.Reward = 0;
+            envState.State.PlayerPosition = EnvStream.ConvertVec3(_player.transform.position);
+            envState.State.PlayerMoveDir = EnvStream.ConvertVec3(_player.GetComponent<Character>().GetMoveDir());
+            envState.State.WolfPosition = EnvStream.ConvertVec3(_wolf.transform.position);
+            envState.State.WolfMoveDir = EnvStream.ConvertVec3(_wolf.GetComponent<Character>().GetMoveDir());
+            _stream.SendState(envState);
 
-            Debug.Log($"Player position {playerPosition}");
-            Debug.Log($"Player move dir {playerMoveDir}");
-            Debug.Log($"Wolf position {wolfPosition}");
-            Debug.Log($"Wolf move dir {wolfMoveDir}");
+            // _logger.LogInfo($"Player position {_stream.playerPosition}");
+            // _logger.LogInfo($"Player move dir {_stream.playerMoveDir}");
+            // _logger.LogInfo($"Wolf position {_stream.wolfPosition}");
+            // _logger.LogInfo($"Wolf move dir {_stream.wolfMoveDir}");
 
             // print player position
             // print wolf position
@@ -220,14 +270,35 @@ public class Plugin : BaseUnityPlugin
             if (!isOurWolf) return true;
 
             _wolf = null;
-            Debug.Log("Wolf unfollowed, and uninitialized");
+            _logger.LogInfo("OnWolfsDeath: Wolf unfollowed, and uninitialized");
 
             return true;
         }
 
+        // [HarmonyPatch(typeof(MonsterAI), "Awake")]
+        // [HarmonyPostfix]
+        // static void WolfCreation(MonsterAI __instance, Character ___m_character)
+        // {
+        //     _logger.LogInfo("Wolf creation enter target");
+        //     
+        //     if (__instance is null) return;
+        //     if (_player?.gameObject is null) return;
+        //     if (___m_character is null) return;
+        //     
+        //     var isWolf = ___m_character.m_name == "$enemy_wolf";
+        //     if (!isWolf) return;
+        //
+        //     var isTamed = ___m_character.IsTamed();
+        //     if (!isTamed) return;
+        //     
+        //     _player.
+        //     __instance.SetFollowTarget(_player.gameObject);
+        //     _logger.LogInfo("Wolf set follow target");
+        // }
+
         [HarmonyPatch(typeof(MonsterAI), nameof(MonsterAI.SetFollowTarget))]
         [HarmonyPostfix]
-        static void WolfInit(MonsterAI __instance, Character ___m_character, GameObject go)
+        static void WolfInitToggle(MonsterAI __instance, Character ___m_character, GameObject go)
         {
             var isWolf = ___m_character.m_name == "$enemy_wolf";
             if (!isWolf) return;
@@ -238,19 +309,18 @@ public class Plugin : BaseUnityPlugin
             if (go is null && _wolf is not null)
             {
                 _wolf = null;
-                Debug.Log("Wolf unfollowed, and uninitialized");
+                _logger.LogInfo("WolfInitToggle: Wolf unfollowed, and uninitialized");
                 return;
             }
 
             if (go is null) return;
             if (_player is null) return;
-            if (_wolf is not null) return;
 
             bool playerIsFollowTarget = ReferenceEquals(go, _player.gameObject);
             if (!playerIsFollowTarget) return;
 
             _wolf = __instance;
-            Debug.Log($"Wolf following, and initialised {_wolf is not null}");
+            _logger.LogInfo($"WolfInitToggle: Wolf following, and initialised {_wolf is not null}");
         }
     }
 

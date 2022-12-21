@@ -14,8 +14,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Protobuf Include="grpc\protos\greet.proto" GrpcServices="Server">
-            <Link>protos\greet.proto</Link>
+        <Protobuf Include="grpc\protos\env.proto" GrpcServices="Server">
+            <Link>protos\env.proto</Link>
         </Protobuf>
     </ItemGroup>
     
@@ -23,6 +23,7 @@
         <PackageReference Include="BepInEx.Analyzers" Version="1.*" PrivateAssets="all" />
         <PackageReference Include="BepInEx.Core" Version="5.*" />
         <PackageReference Include="BepInEx.PluginInfoProps" Version="1.*" />
+        <PackageReference Include="Chan4Net" Version="1.0.0" />
         <PackageReference Include="Google.Protobuf" Version="3.21.12" />
         <PackageReference Include="Grpc.Core" Version="2.46.5" />
         <PackageReference Include="Grpc.Tools" Version="2.51.0">
