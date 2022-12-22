@@ -140,10 +140,6 @@ public class Plugin : BaseUnityPlugin
         [HarmonyPostfix]
         static void InitGlobalKeyBoardListener(ZInput __instance)
         {
-            // Has to separate since the wolf is
-            // the part of env reset initialisation
-            _gymEnv.HandleEnvReset();
-            
             if (ZInput.GetButton("InitEnvironment"))
             {
                 ValheimEnvironment.ResetEnvironment();
@@ -253,9 +249,11 @@ public class Plugin : BaseUnityPlugin
             
             grpc.Feedback feedback = new();
             feedback.State = new();
-
-            feedback.Done = false;
+            
+            feedback.Done = _wolf is null;;
             feedback.Reward = 0;
+            if (feedback.Done) return feedback;
+            
             feedback.State.PlayerPosition = utils.ConvertUnitVec3(_player.transform.position);
             feedback.State.PlayerDirection = utils.ConvertUnitVec3(_player.GetComponent<Character>().GetMoveDir());
             feedback.State.WolfPosition = utils.ConvertUnitVec3(_wolf.transform.position);
@@ -263,17 +261,11 @@ public class Plugin : BaseUnityPlugin
             return feedback;
         }
         
-        [HarmonyPatch(typeof(MonsterAI), "UpdateAI")]
+        [HarmonyPatch(typeof(Minimap), "UpdateDynamicPins")]
         [HarmonyPrefix]
-        static bool Step(MonsterAI __instance, float dt)
+        static bool Step(float dt)
         {            
-            if (_wolf is null) return true;
-            if (__instance is null) return true;
-
-            bool isOurWolf = ReferenceEquals(_wolf.gameObject, __instance.gameObject);
-            if (!isOurWolf) return true;
-
-            _gymEnv.Timestep();
+            _gymEnv.Timestep(dt);
             return true;
         }
 

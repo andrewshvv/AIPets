@@ -79,8 +79,19 @@ public class UnityEnv
         _actionChan.Close();
     }
 
-    public bool HandleEnvReset()
+    public bool Timestep(float dt)
     {
+        if (OnReset is null) return false;
+        if (OnFeedbackRequest is null) return false;
+        if (OnIncomingAction is null) return false;
+
+        // Run environment only every X frames aka timestep
+        if (_isSkipingTimeStep(dt))
+        {
+            _logger.LogDebug("Timestep: skip timestep");
+            return false;
+        }
+        
         // Check whether we receive reset env event
         // In this case we execute start handler, which should
         // prepare game environment 
@@ -91,22 +102,6 @@ public class UnityEnv
             // game needs to apply some changes
             _resetTimer();
             return true;
-        }
-
-        return false;
-    }
-    
-    public bool Timestep()
-    {
-        if (OnReset is null) return false;
-        if (OnFeedbackRequest is null) return false;
-        if (OnIncomingAction is null) return false;
-
-        // Run environment only every X frames aka timestep
-        if (_isSkipingTimeStep())
-        {
-            _logger.LogDebug("Timestep: skip timestep");
-            return false;
         }
 
         // If no env reset event happened
@@ -204,15 +199,15 @@ public class UnityEnv
         }
     }
 
-    private bool _isSkipingTimeStep()
+    private bool _isSkipingTimeStep(float dt)
     {
-        _unityTimer += Time.deltaTime;
+        _unityTimer += dt;
         if (_unityTimer < _step) return true;
 
-        _logger.LogDebug("==========");
-        _logger.LogDebug($"Delta {Time.deltaTime}");
-        _logger.LogDebug($"Unity time passed {_unityTimer}");
-        _logger.LogDebug($"Real time passed {DateTime.UtcNow.Subtract(_realTimer).TotalSeconds}");
+        _logger.LogInfo("==========");
+        _logger.LogInfo($"Delta {dt}");
+        _logger.LogInfo($"Unity time passed {_unityTimer}");
+        _logger.LogInfo($"Real time passed {DateTime.UtcNow.Subtract(_realTimer).TotalSeconds}");
         return false;
     }
 
@@ -245,6 +240,8 @@ public class UnityEnv
         try
         {
             _feedbackChan.Send(feedback);
+            if (feedback.Done) Stop();
+            
             return true;
         }
         catch (InvalidOperationException)
