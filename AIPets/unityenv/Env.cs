@@ -15,6 +15,9 @@ public class UnityEnv
     private ManualLogSource _logger;
 
     private readonly float _step;
+    private readonly int _maxIterations;
+    private int _iterations;
+    
     private float _unityTimer;
     private DateTime _realTimer;
 
@@ -27,11 +30,12 @@ public class UnityEnv
     private readonly Chan<bool> _resetChan;
     private Chan<grpc.Action> _actionChan;
 
-    public UnityEnv(float step, ManualLogSource logger)
+    public UnityEnv(float step, int maxIterations, ManualLogSource logger)
     {
         _logger = logger;
         _step = step;
-
+        _maxIterations = maxIterations;
+        
         _unityTimer = 0.0f;
         _realTimer = DateTime.UtcNow;
         _resetChan = new(size: 1);
@@ -73,12 +77,19 @@ public class UnityEnv
             
             _started = false;
             _actionAvailable = false;
+            _iterations = 0;
         }
 
         _feedbackChan.Close();
         _actionChan.Close();
     }
 
+    public bool Iter()
+    {
+        _iterations++;
+        return _iterations >= _maxIterations;
+    }
+    
     public bool Timestep(float dt)
     {
         if (OnReset is null) return false;
@@ -204,10 +215,10 @@ public class UnityEnv
         _unityTimer += dt;
         if (_unityTimer < _step) return true;
 
-        _logger.LogInfo("==========");
-        _logger.LogInfo($"Delta {dt}");
-        _logger.LogInfo($"Unity time passed {_unityTimer}");
-        _logger.LogInfo($"Real time passed {DateTime.UtcNow.Subtract(_realTimer).TotalSeconds}");
+        _logger.LogDebug("==========");
+        _logger.LogDebug($"Delta {dt}");
+        _logger.LogDebug($"Unity time passed {_unityTimer}");
+        _logger.LogDebug($"Real time passed {DateTime.UtcNow.Subtract(_realTimer).TotalSeconds}");
         return false;
     }
 

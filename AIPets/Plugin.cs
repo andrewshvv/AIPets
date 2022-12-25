@@ -15,8 +15,6 @@ namespace AIPets;
 
 // todo: calculate the reward
 // - distance between me a wolf, if within R than reward 1
-// todo: calculate done
-// - is wolf null check
 
 [BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
 public class Plugin : BaseUnityPlugin
@@ -30,7 +28,7 @@ public class Plugin : BaseUnityPlugin
     private void Awake()
     {
         _logger = Logger;
-        _gymEnv = new UnityEnv(0.08f, _logger);
+        _gymEnv = new UnityEnv(0.2f, 200, _logger);
         _gymEnv.OnReset = WolfControl.OnReset;
         _gymEnv.OnIncomingAction = WolfControl.OnIncomingAction;
         _gymEnv.OnFeedbackRequest = WolfControl.OnFeedbackRequest;
@@ -114,6 +112,11 @@ public class Plugin : BaseUnityPlugin
             _console.TryRunCommand("removedrops");
             _console.TryRunCommand("spawn Wolf");
             _console.TryRunCommand("tame");
+
+            Vector3 change = Vector3.zero;
+            change.x = 2;
+            change.z = 2;
+            _player.transform.position += change;
 
             List<Character> allCharacters = Character.GetAllCharacters();
             foreach (Character character in allCharacters)
@@ -247,13 +250,28 @@ public class Plugin : BaseUnityPlugin
         {
             _logger.LogDebug("feedback handler running");
             
-            grpc.Feedback feedback = new();
-            feedback.State = new();
-            
-            feedback.Done = _wolf is null;;
-            feedback.Reward = 0;
+            grpc.Feedback feedback = new()
+            {
+                State = new State(),
+                Done = _wolf is null || _gymEnv.Iter(),
+                Reward = 0
+            };
+
             if (feedback.Done) return feedback;
             
+            float dist = Vector3.Distance(_player.transform.position, _wolf.transform.position);
+            if (dist < 2)
+            {
+                feedback.Reward = 1;
+                feedback.Done = true;
+            }
+            if (dist >= 8)
+            {
+                feedback.Done = true;
+                feedback.Reward = -1;
+            }
+
+            _logger.LogInfo($"Distance {dist}, Reward {feedback.Reward}");
             feedback.State.PlayerPosition = utils.ConvertUnitVec3(_player.transform.position);
             feedback.State.PlayerDirection = utils.ConvertUnitVec3(_player.GetComponent<Character>().GetMoveDir());
             feedback.State.WolfPosition = utils.ConvertUnitVec3(_wolf.transform.position);
