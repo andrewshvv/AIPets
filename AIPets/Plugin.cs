@@ -113,10 +113,8 @@ public class Plugin : BaseUnityPlugin
             _console.TryRunCommand("spawn Wolf");
             _console.TryRunCommand("tame");
 
-            Vector3 change = Vector3.zero;
-            change.x = 2;
-            change.z = 2;
-            _player.transform.position += change;
+            WolfControl._wolf.transform.position =
+                _player.transform.position + _player.transform.forward * 4f + Vector3.up;
 
             List<Character> allCharacters = Character.GetAllCharacters();
             foreach (Character character in allCharacters)
@@ -170,7 +168,7 @@ public class Plugin : BaseUnityPlugin
     [HarmonyPatch]
     class WolfControl
     {
-        private static MonsterAI _wolf;
+        public static MonsterAI _wolf;
         private static Vector3 _wolfDir;
 
 
