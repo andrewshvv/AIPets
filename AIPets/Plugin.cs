@@ -113,9 +113,6 @@ public class Plugin : BaseUnityPlugin
             _console.TryRunCommand("spawn Wolf");
             _console.TryRunCommand("tame");
 
-            WolfControl._wolf.transform.position =
-                _player.transform.position + _player.transform.forward * 4f + Vector3.up;
-
             List<Character> allCharacters = Character.GetAllCharacters();
             foreach (Character character in allCharacters)
             {
@@ -127,7 +124,8 @@ public class Plugin : BaseUnityPlugin
                 _logger.LogDebug($"{character.m_name} set followed");
             }
 
-            // go to some distance from wolf or move the wolf?
+            WolfControl._wolf.transform.position =
+                _player.transform.position + _player.transform.forward * 4f + Vector3.up;
 
             _logger.LogDebug("Environment initialised");
             _initTime = DateTime.UtcNow;
